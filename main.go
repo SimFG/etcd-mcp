@@ -1,55 +1,45 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"log"
 
 	"github.com/SimFG/etcd-mcp/tools"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	mcp_golang "github.com/metoro-io/mcp-golang"
+	"github.com/metoro-io/mcp-golang/transport/stdio"
 )
 
-func main() {
-	// Create MCP server
-	s := server.NewMCPServer(
-		"Etcd MCP Server 🚀",
-		"1.0.0",
-		server.WithLogging(),
-	)
-
-	// Add tool
-	tool := mcp.NewTool("hello_world",
-		mcp.WithDescription("Say hello to someone"),
-		mcp.WithString("name",
-			mcp.Required(),
-			mcp.Description("Name of the person to greet"),
-		),
-	)
-
-	// Add tool handler·
-	s.AddTool(tool, helloHandler)
-
-	tools.AddHealthTool(s)
-
-	// // Start the stdio server
-	// if err := server.ServeStdio(s); err != nil {
-	// 	fmt.Printf("Server error: %v\n", err)
-	// }
-
-	sseServer := server.NewSSEServer(s, server.WithBaseURL("http://0.0.0.0:8181"))
-	log.Printf("SSE server listening on :8181")
-	if err := sseServer.Start(":8181"); err != nil {
-		log.Fatalf("Server error: %v", err)
-	}
+// Tool arguments are just structs, annotated with jsonschema tags
+// More at https://mcpgolang.com/tools#schema-generation
+type Content struct {
+	Title       string  `json:"title" jsonschema:"required,description=The title to submit"`
+	Description *string `json:"description" jsonschema:"description=The description to submit"`
+}
+type MyFunctionsArguments struct {
+	Submitter string  `json:"submitter" jsonschema:"required,description=The name of the thing calling this tool (openai, google, claude, etc)"`
+	Content   Content `json:"content" jsonschema:"required,description=The content of the message"`
 }
 
-func helloHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, ok := request.Params.Arguments["name"].(string)
-	if !ok {
-		return nil, errors.New("name must be a string")
+func main() {
+	done := make(chan struct{})
+
+	server := mcp_golang.NewServer(
+		stdio.NewStdioServerTransport(),
+		mcp_golang.WithName("Etcd MCP Server 🚀"),
+		mcp_golang.WithVersion("1.0.0"),
+	)
+	err := server.RegisterTool("hello", "Say hello to a person", func(arguments MyFunctionsArguments) (*mcp_golang.ToolResponse, error) {
+		return mcp_golang.NewToolResponse(mcp_golang.NewTextContent(fmt.Sprintf("Hello, %server!", arguments.Submitter))), nil
+	})
+	if err != nil {
+		panic(err)
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Hello, %s!", name)), nil
+	tools.RegisterHealthTool(server)
+
+	err = server.Serve()
+	if err != nil {
+		panic(err)
+	}
+
+	<-done
 }

@@ -5,33 +5,32 @@ import (
 	"errors"
 
 	"github.com/SimFG/etcd-mcp/common"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	mcp_golang "github.com/metoro-io/mcp-golang"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-func AddHealthTool(s *server.MCPServer) {
-	opts := []mcp.ToolOption{
-		mcp.WithDescription("Check the health of the etcd server"),
-	}
-	opts = append(opts, common.GetConnectionOptions()...)
-	tool := mcp.NewTool("health", opts...)
-	s.AddTool(tool, healthHandler)
+type HealthArgument struct {
+	ConnectionUrl string `json:"connection_url" jsonschema:"required,description=The connection URL for the etcd server"`
 }
 
-func healthHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	connectionURL := request.Params.Arguments["connection_url"].(string)
-	err := common.EtcdOp(connectionURL, func(client *clientv3.Client) error {
-		_, err := client.Get(ctx, "health")
-		if err == nil || errors.Is(err, rpctypes.ErrPermissionDenied) {
-			return nil
+func RegisterHealthTool(server *mcp_golang.Server) {
+	tooName := "health"
+	toolDes := "Check the health of the etcd server"
+	err := server.RegisterTool(tooName, toolDes, func(arguments HealthArgument) (*mcp_golang.ToolResponse, error) {
+		err := common.EtcdOp(arguments.ConnectionUrl, func(ctx context.Context, client *clientv3.Client) error {
+			_, err := client.Get(ctx, "health")
+			if err == nil || errors.Is(err, rpctypes.ErrPermissionDenied) {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			return mcp_golang.NewToolResponse(mcp_golang.NewTextContent("Failed to check health: " + err.Error())), nil
 		}
-		return err
+		return mcp_golang.NewToolResponse(mcp_golang.NewTextContent("OK")), nil
 	})
 	if err != nil {
-		return mcp.NewToolResultText("Failed to check health: " + err.Error()), nil
+		panic(err)
 	}
-
-	return mcp.NewToolResultText("OK"), nil
 }
