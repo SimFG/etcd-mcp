@@ -15,7 +15,7 @@ etcd-mcp is a Management Control Panel server for etcd, providing a set of tools
 ## Installation
 
 ```bash
-go install github.com/SimFG/etcd-mcp
+go install github.com/SimFG/etcd-mcp@latest
 ```
 
 ## Usage
